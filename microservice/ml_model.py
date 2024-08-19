@@ -20,11 +20,22 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 def create_features(df):
-    if df.empty or len(df) < 26:  # Ensure there's enough data to calculate features
+    if df.empty or len(df) < 26:
         return pd.DataFrame()
 
     df = df.copy()
 
+    """ Garman-Klass volatility: extends Parkinson's volatility by taking into account the opening and closing price.
+        As markets are most active during the opening and closing of a trading session, it makes volatility estimation 
+        more accurate. Takes into account intraday price extremums as well. Assumes continous diffusion process
+     
+        RSI: measures the speed and magnitude of a security's recent price changes to evaluate overvalued or undervalued 
+        conditions in the price of that security. 
+        
+        Bollinger Bands: Helps gauge the volatility of stocks and other securities to determine if they are over- or undervalued.
+        The center line is the stock price's 20-day simple moving average (SMA). The upper and lower bands are set at a 
+        certain number of standard deviations, usually two, above and below the middle line.
+     """
     df['garman_klass_vol'] = np.sqrt(0.5 * (np.log(df['High'] / df['Low']) ** 2) -
                                      (2 * np.log(2) - 1) * (np.log(df['Close'] / df['Open']) ** 2))
     df['rsi'] = ta.momentum.RSIIndicator(close=df['Adj Close'], window=14).rsi()
@@ -72,12 +83,12 @@ async def train_model(request: Request, ticker: str = Form(...)):
     rf_predictions = rf_model.predict(X_test)
     rf_mse = mean_squared_error(y_test, rf_predictions)
 
-    # Train XGBoost model
     xgb_model = xgb.XGBRegressor(objective='reg:squarederror', n_estimators=100, random_state=42)
     xgb_model.fit(X_train, y_train)
     xgb_predictions = xgb_model.predict(X_test)
     xgb_mse = mean_squared_error(y_test, xgb_predictions)
 
+    # Decide best model for return of final prediction
     if rf_mse < xgb_mse:
         best_model = rf_model.fit(X_scaled, y)
         best_prediction = rf_model.predict(X_scaled[-1].reshape(1, -1))
